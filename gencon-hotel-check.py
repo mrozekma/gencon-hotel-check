@@ -173,7 +173,6 @@ if args.test:
 lastAlerts = None
 
 def sessionSetup():
-	print "Getting session..."
 	try:
 		resp = urlopen(startUrl, context = sslCtx)
 	except URLError, e:
@@ -184,7 +183,7 @@ def sessionSetup():
 			exit(1)
 		raise e
 	if resp.getcode() != 200:
-		print "Request failed: %d" % resp.getcode()
+		print "Session request failed: %d" % resp.getcode()
 		return None
 
 	if 'Set-Cookie' not in resp.info():
@@ -195,7 +194,7 @@ def sessionSetup():
 	headers = {'Cookie': ';'.join(cookies)}
 
 	# Set search filter
-	print "Setting search filter... (%d %s, %d %s, %s - %s)" % (args.guests, 'guest' if args.guests == 1 else 'guests', args.rooms, 'room' if args.rooms == 1 else 'rooms', args.checkin, args.checkout)
+	print "Searching... (%d %s, %d %s, %s - %s)" % (args.guests, 'guest' if args.guests == 1 else 'guests', args.rooms, 'room' if args.rooms == 1 else 'rooms', args.checkin, args.checkout)
 	data = {
 		'hotelId': '0',
 		'blockMap.blocks[0].blockId': '0',
@@ -209,37 +208,19 @@ def sessionSetup():
 	if resp.getcode() not in (200, 302):
 		print "Search failed"
 		return None
+	return resp
 
-	# Set sort to "distance (near to far)". The response is ignored; it's not a big deal if this fails
-	data = {
-		'eventInventory': 'false',
-		'sortOption': 'ascDistance',
-	}
-	urlopen(Request('https://aws.passkey.com/event/14276138/owner/10909638/sort/hotel-list', urlencode(data), headers), context = sslCtx)
-
-	# Fetching this page gives the latest results
-	return Request('https://aws.passkey.com/event/14276138/owner/10909638/list/hotels', headers = headers)
-
-def search(req):
+def search(resp):
 	global lastAlerts
-	print
-	print "Loading search results... (%s)" % datetime.now()
-	resp = urlopen(req, context = sslCtx)
-	if resp.getcode() != 200:
-		print "Request failed: %d" % resp.getcode()
-		return False
 
-	print "Parsing HTML..."
 	parser = PasskeyParser(resp)
 	if not parser.json:
 		print "Failed to find search results"
 		return False
 
-	print "Parsing JSON..."
 	hotels = fromJS(parser.json)
 
-	print
-	print "Results:"
+	print "Results:   (%s)" % datetime.now()
 	alert = []
 
 	for hotel in hotels:
@@ -264,17 +245,14 @@ def search(req):
 				Thread(target = fn, args = (preamble, alert)).start()
 			print "Triggered alerts"
 
+	print
 	lastAlerts = alert
 	return True
 
 while True:
-	req = sessionSetup()
-	if req is not None:
-		while True:
-			if not search(req): # Search failed, possibly session timeout? Try connecting again immediately
-				break
-			if args.once:
-				exit(0)
-			sleep(60 * args.delay)
-	else: # Session setup failed. Try again next cycle
-		sleep(60 * args.delay)
+	resp = sessionSetup()
+	if resp is not None:
+		search(resp)
+		if args.once:
+			exit(0)
+	sleep(60 * args.delay)
