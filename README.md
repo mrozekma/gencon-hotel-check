@@ -12,7 +12,7 @@ cd gencon-hotel-check
 python gencon-hotel-check.py
 ```
 
-If you don't have git, you can download the script directly by going to [the file in Github](https://github.com/mrozekma/gencon-hotel-check/blob/master/gencon-hotel-check.py), clicking the "Raw" button, and saving the page.
+If you don't have git, you can open the [raw file](https://raw.githubusercontent.com/mrozekma/gencon-hotel-check/master/gencon-hotel-check.py) on Github and save it.
 
 `gencon-hotel-check.py --help` outputs the complete list of arguments, but these are the most important:
 

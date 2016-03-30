@@ -4,12 +4,14 @@ from datetime import datetime
 from HTMLParser import HTMLParser
 from json import loads as fromJS
 from ssl import create_default_context as create_ssl_context, CERT_NONE, SSLError
+from sys import version_info
 from threading import Thread
 from time import sleep
 from urllib import urlencode
-from urllib2 import Request, URLError, urlopen
+from urllib2 import HTTPError, Request, URLError, urlopen
 import urllib, urllib2
 
+version = '1'
 distanceUnits = {
 	1: 'blocks',
 	2: 'yards',
@@ -53,6 +55,10 @@ class EmailAction(Action):
 			setattr(namespace, self.dest, dest)
 		dest.append(tuple(['email'] + values))
 
+if version_info < (2, 7, 9):
+	print "Requires Python 2.7.9+"
+	exit(1)
+
 parser = ArgumentParser()
 validDays = ["2016-08-%02d" % d for d in range(1, 10)]
 parser.add_argument('--guests', type = int, default = 1, help = 'number of guests')
@@ -80,6 +86,22 @@ group.add_argument('--email', dest = 'alerts', action = EmailAction, nargs = 3, 
 
 args = parser.parse_args()
 startUrl = "https://aws.passkey.com/reg/%s/null/null/1/0/null" % args.key
+
+sslCtx = create_ssl_context()
+if not args.ssl_cert_verify:
+	sslCtx.check_hostname = False
+	sslCtx.verify_mode = CERT_NONE
+
+# Attempt to check the version against Github, but ignore it if it fails
+try:
+	resp = urlopen('https://raw.githubusercontent.com/mrozekma/gencon-hotel-check/master/version', context = sslCtx)
+	if resp.getcode() == 200:
+		head = resp.read()
+		if version != head:
+			print "Warning: This script is out-of-date. If you downloaded it via git, use 'git pull' to fetch the latest version. Otherwise, visit https://github.com/mrozekma/gencon-hotel-check"
+			print
+except HTTPError:
+	pass
 
 # Setup the alert handlers
 alertFns = []
@@ -147,11 +169,6 @@ if args.test:
 		fn(preamble, hotels)
 	print "Done"
 	exit(0)
-
-sslCtx = create_ssl_context()
-if not args.ssl_cert_verify:
-	sslCtx.check_hostname = False
-	sslCtx.verify_mode = CERT_NONE
 
 lastAlerts = None
 
