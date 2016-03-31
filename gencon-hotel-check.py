@@ -3,6 +3,7 @@ from argparse import Action, ArgumentParser, ArgumentTypeError, SUPPRESS
 from datetime import datetime
 from HTMLParser import HTMLParser
 from json import loads as fromJS
+from os.path import abspath, dirname, join as pathjoin
 from ssl import create_default_context as create_ssl_context, CERT_NONE, SSLError
 from sys import version_info
 from threading import Thread
@@ -11,7 +12,6 @@ from urllib import urlencode
 from urllib2 import HTTPError, Request, URLError, urlopen
 import urllib, urllib2
 
-version = '1'
 distanceUnits = {
 	1: 'blocks',
 	2: 'yards',
@@ -104,13 +104,14 @@ if not args.ssl_cert_verify:
 
 # Attempt to check the version against Github, but ignore it if it fails
 try:
+	version = open(pathjoin(dirname(abspath(__file__)), 'version')).read()
 	resp = urlopen('https://raw.githubusercontent.com/mrozekma/gencon-hotel-check/master/version', context = sslCtx)
 	if resp.getcode() == 200:
 		head = resp.read()
 		if version != head:
 			print "Warning: This script is out-of-date. If you downloaded it via git, use 'git pull' to fetch the latest version. Otherwise, visit https://github.com/mrozekma/gencon-hotel-check"
 			print
-except HTTPError:
+except (HTTPError, IOError):
 	pass
 
 # Setup the alert handlers
@@ -155,7 +156,7 @@ for alert in args.alerts or []:
 		try:
 			smtpConnect()
 			def handle(preamble, hotels):
-				msg = MIMEText("%s:\n\n%s\n\n%s" % (preamble, '\n'.join("  * %s: %s" % (hotel['distance'], hotel['name']) for hotel in hotels), startUrl))
+				msg = MIMEText("%s\n\n%s\n\n%s" % (preamble, '\n'.join("  * %s: %s" % (hotel['distance'], hotel['name'].encode('utf-8')) for hotel in hotels), startUrl), 'plain', 'utf-8')
 				msg['Subject'] = 'Gencon Hotel Search'
 				msg['From'] = fromEmail
 				msg['To'] = toEmail
