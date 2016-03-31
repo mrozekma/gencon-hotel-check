@@ -47,6 +47,14 @@ def type_day(arg):
 		raise ArgumentTypeError("%s is outside the Gencon housing block window" % arg)
 	return arg
 
+def type_distance(arg):
+	if arg == 'connected':
+		return arg
+	try:
+		return float(arg)
+	except ValueError:
+		raise ArgumentTypeError("invalid float value: '%s'" % arg)
+
 class EmailAction(Action):
 	def __call__(self, parser, namespace, values, option_string=None):
 		dest = getattr(namespace, self.dest)
@@ -68,7 +76,9 @@ group = parser.add_mutually_exclusive_group()
 group.add_argument('--checkin', type = type_day, metavar = 'YYYY-MM-DD', default = '2016-08-04', help = 'check in')
 group.add_argument('--wednesday', dest = 'checkin', action = 'store_const', const = '2016-08-03', help = 'check in on 2016-08-03')
 parser.add_argument('--checkout', type = type_day, metavar = 'YYYY-MM-DD', default = '2016-08-07', help = 'check out')
-parser.add_argument('--max-distance', type = float, metavar = 'BLOCKS', help = 'max hotel distance that triggers an alert')
+group = parser.add_mutually_exclusive_group()
+group.add_argument('--max-distance', type = type_distance, metavar = 'BLOCKS', help = "max hotel distance that triggers an alert (or 'connected' to require skywalk hotels)")
+group.add_argument('--connected', dest = 'max_distance', action = 'store_const', const = 'connected', help = 'shorthand for --max-distance connected')
 parser.add_argument('--ssl-insecure', action = 'store_false', dest = 'ssl_cert_verify', help = SUPPRESS)
 group = parser.add_mutually_exclusive_group()
 group.add_argument('--delay', type = int, default = 1, metavar = 'MINS', help = 'search every MINS minute(s)')
@@ -194,7 +204,7 @@ def sessionSetup():
 	headers = {'Cookie': ';'.join(cookies)}
 
 	# Set search filter
-	print "Searching... (%d %s, %d %s, %s - %s)" % (args.guests, 'guest' if args.guests == 1 else 'guests', args.rooms, 'room' if args.rooms == 1 else 'rooms', args.checkin, args.checkout)
+	print "Searching... (%d %s, %d %s, %s - %s, %s)" % (args.guests, 'guest' if args.guests == 1 else 'guests', args.rooms, 'room' if args.rooms == 1 else 'rooms', args.checkin, args.checkout, 'connected' if args.max_distance == 'connected' else 'downtown' if args.max_distance is None else "within %.1f blocks" % args.max_distance)
 	data = {
 		'hotelId': '0',
 		'blockMap.blocks[0].blockId': '0',
@@ -225,10 +235,16 @@ def search(resp):
 
 	for hotel in hotels:
 		if hotel['blocks']:
-			simpleHotel = {'name': parser.unescape(hotel['name']), 'distance': "%4.1f %s" % (hotel['distanceFromEvent'], distanceUnits.get(hotel['distanceUnit'], '???'))}
+			connected = ('Skywalk to ICC' in (hotel['messageMap'] or ''))
+			simpleHotel = {
+				'name': parser.unescape(hotel['name']),
+				'distance': 'Skywalk' if connected else "%4.1f %s" % (hotel['distanceFromEvent'], distanceUnits.get(hotel['distanceUnit'], '???')),
+			}
 			result = "%-15s %s" % (simpleHotel['distance'], simpleHotel['name'])
 			# I don't think these distances (yards, meters, kilometers) actually appear in the results, but if they do assume it must be close enough regardless of --max-distance
-			if hotel['distanceUnit'] in (2, 4, 5) or (hotel['distanceUnit'] == 1 and (args.max_distance is None or hotel['distanceFromEvent'] <= args.max_distance)):
+			if hotel['distanceUnit'] in (2, 4, 5) or \
+			   (hotel['distanceUnit'] == 1 and (args.max_distance is None or (isinstance(args.max_distance, float) and hotel['distanceFromEvent'] <= args.max_distance))) or \
+			   (args.max_distance == 'connected' and connected):
 				alert.append(simpleHotel)
 				print ' !',
 			else:
