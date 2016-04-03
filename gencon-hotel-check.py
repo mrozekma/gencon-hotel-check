@@ -192,7 +192,8 @@ def sessionSetup():
 			print
 			print "If Python is having trouble finding your local certificate store, you can bypass this check with --ssl-insecure"
 			exit(1)
-		raise e
+		print "Session request failed: %s" % e
+		return None
 	if resp.getcode() != 200:
 		print "Session request failed: %d" % resp.getcode()
 		return None
