@@ -103,6 +103,7 @@ if not args.ssl_cert_verify:
 	sslCtx.verify_mode = CERT_NONE
 
 # Attempt to check the version against Github, but ignore it if it fails
+# Only updating the version when a breaking bug is fixed (a crash or a failure to search correctly)
 try:
 	version = open(pathjoin(dirname(abspath(__file__)), 'version')).read()
 	resp = urlopen('https://raw.githubusercontent.com/mrozekma/gencon-hotel-check/master/version', context = sslCtx)
@@ -216,8 +217,11 @@ def sessionSetup():
 		'blockMap.blocks[0].numberOfRooms': str(args.rooms),
 		'blockMap.blocks[0].numberOfChildren': str(args.children),
 	}
-	resp = urlopen(Request('https://aws.passkey.com/event/14276138/owner/10909638/rooms/select', urlencode(data), headers), context = sslCtx)
-	if resp.getcode() not in (200, 302):
+	try:
+		resp = urlopen(Request('https://aws.passkey.com/event/14276138/owner/10909638/rooms/select', urlencode(data), headers), context = sslCtx)
+	except URLError:
+		resp = None
+	if resp is None or resp.getcode() not in (200, 302):
 		print "Search failed"
 		return None
 	return resp
