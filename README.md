@@ -2,6 +2,15 @@
 
 This script polls the Gencon housing website looking for hotel rooms near the ICC, and alerts you in a variety of ways when available rooms are found. It requires a relatively modern version of [Python](https://www.python.org/) 2 (2.7.9+).
 
+## Output
+
+The columns in the script's output are:
+
+* `Distance` -- How far away the hotel is. By default only rooms in the "blocks" range are shown, as these are the only rooms the script will ever care alert you about, but `--show-all` will also show the hotels miles away. "Skywalk" means the hotel is connected to the ICC by a skywalk.
+* `Price` -- The total price, before taxes/fees. Essentially the nightly rate times the number of nights.
+* `Hotel` -- The name of the hotel.
+* `Room` -- The description of the room. If the hotel has multiple rooms, there will be multiple lines in the output. The number in parentheses is how many rooms with that description are available.
+
 ## Usage
 
 To fetch and run the script, open a terminal (Linux, Mac) / command prompt (Windows) and run:
@@ -66,3 +75,13 @@ Send an e-mail that lists the found hotels and includes a link to the housing si
 ### SMS
 
 SMS messaging is not directly supported, as it generally requires access to a paid API. However, most carriers provide a [gateway](https://en.wikipedia.org/wiki/SMS_gateway#Email_clients) that can be used to send SMS messages via e-mail. This is the main reason the e-mail alert option provides a distinct "to" address -- it's expected that you'll be sending the e-mail to yourself (i.e. to the "from" address), but you can also send it to your phone via an SMS gateway.
+
+## Filtering
+
+By default, the script looks for hotels near the ICC (where "near" means the distance is measure in "blocks", not "miles") that have rooms available in the date range you specified. There are a variety of optional arguments to narrow this down further if necessary:
+
+* `--max-distance` specifies the maximum blocks away the hotel can be. If 4 blocks is the farthest you want to walk, use `--max-distance 4`. If you require a hotel connected to the ICC by a skywalk, use `--max-distance connected` (or just `--connected`).
+* `--budget` specifies the max amount you're willing to pay. This is the sum of all the days (not just the daily rate), but does not include taxes or other fees. This means if there's a $200/night room available Wednesday-Sunday, you need a max budget of at least $800 to see it.
+* `--hotel-regex` and `--room-regex` are [regular expressions](https://en.wikipedia.org/wiki/Regular_expression) compared (case-insensitively) against the hotel name and room description. Explaining regular expressions would take a while, but here are some likely common cases:
+  - To require that a particular value show up somewhere, just specify that value. To only show Marriott hotels: `--hotel-regex "marriott"`
+  - To require one of a set of values show up, separate them with `|`. To only show hotels with double or queen beds: `--room-regex "double|queen"`

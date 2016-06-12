@@ -4,6 +4,7 @@ from datetime import datetime
 from HTMLParser import HTMLParser
 from json import loads as fromJS
 from os.path import abspath, dirname, join as pathjoin
+from re import compile as reCompile, IGNORECASE as RE_IGNORECASE
 from ssl import create_default_context as create_ssl_context, CERT_NONE, SSLError
 from sys import version_info
 from threading import Thread
@@ -55,6 +56,12 @@ def type_distance(arg):
 	except ValueError:
 		raise ArgumentTypeError("invalid float value: '%s'" % arg)
 
+def type_regex(arg):
+	try:
+		return reCompile(arg, RE_IGNORECASE)
+	except Exception, e:
+		raise ArgumentTypeError("invalid regex '%s': %s" % (arg, e))
+
 class EmailAction(Action):
 	def __call__(self, parser, namespace, values, option_string=None):
 		dest = getattr(namespace, self.dest)
@@ -79,6 +86,10 @@ parser.add_argument('--checkout', type = type_day, metavar = 'YYYY-MM-DD', defau
 group = parser.add_mutually_exclusive_group()
 group.add_argument('--max-distance', type = type_distance, metavar = 'BLOCKS', help = "max hotel distance that triggers an alert (or 'connected' to require skywalk hotels)")
 group.add_argument('--connected', dest = 'max_distance', action = 'store_const', const = 'connected', help = 'shorthand for --max-distance connected')
+parser.add_argument('--budget', type = float, metavar = 'PRICE', default = '99999', help = 'max total rate (not counting taxes/fees) that triggers an alert')
+parser.add_argument('--hotel-regex', type = type_regex, metavar = 'PATTERN', default = reCompile('.*'), help = 'regular expression to match hotel name against')
+parser.add_argument('--room-regex', type = type_regex, metavar = 'PATTERN', default = reCompile('.*'), help = 'regular expression to match room against')
+parser.add_argument('--show-all', action = 'store_true', help = 'show all rooms, even if miles away (these rooms never trigger alerts)')
 parser.add_argument('--ssl-insecure', action = 'store_false', dest = 'ssl_cert_verify', help = SUPPRESS)
 group = parser.add_mutually_exclusive_group()
 group.add_argument('--delay', type = int, default = 1, metavar = 'MINS', help = 'search every MINS minute(s)')
@@ -122,14 +133,14 @@ for alert in args.alerts or []:
 	if alert[0] == 'popup':
 		try:
 			import win32api
-			alertFns.append(lambda preamble, hotels: win32api.MessageBox(0, 'Gencon Hotel Search', "%s\n\n%s" % (preamble, '\n'.join("%s: %s" % (hotel['distance'], hotel['name']) for hotel in hotels))))
+			alertFns.append(lambda preamble, hotels: win32api.MessageBox(0, 'Gencon Hotel Search', "%s\n\n%s" % (preamble, '\n'.join("%s: %s: %s" % (hotel['distance'], hotel['name'], hotel['room']) for hotel in hotels))))
 		except ImportError:
 			try:
 				import Tkinter, tkMessageBox
 				def handle(preamble, hotels):
 					window = Tkinter.Tk()
 					window.wm_withdraw()
-					tkMessageBox.showinfo(title = 'Gencon Hotel Search', message = "%s\n\n%s" % (preamble, '\n'.join("%s: %s" % (hotel['distance'], hotel['name']) for hotel in hotels)))
+					tkMessageBox.showinfo(title = 'Gencon Hotel Search', message = "%s\n\n%s" % (preamble, '\n'.join("%s: %s: %s" % (hotel['distance'], hotel['name'], hotel['room']) for hotel in hotels)))
 					window.destroy()
 				alertFns.append(handle)
 			except ImportError:
@@ -157,7 +168,7 @@ for alert in args.alerts or []:
 		try:
 			smtpConnect()
 			def handle(preamble, hotels):
-				msg = MIMEText("%s\n\n%s\n\n%s" % (preamble, '\n'.join("  * %s: %s" % (hotel['distance'], hotel['name'].encode('utf-8')) for hotel in hotels), startUrl), 'plain', 'utf-8')
+				msg = MIMEText("%s\n\n%s\n\n%s" % (preamble, '\n'.join("  * %s: %s: %s" % (hotel['distance'], hotel['name'].encode('utf-8'), hotel['room'].encode('utf-8')) for hotel in hotels), startUrl), 'plain', 'utf-8')
 				msg['Subject'] = 'Gencon Hotel Search'
 				msg['From'] = fromEmail
 				msg['To'] = toEmail
@@ -176,13 +187,13 @@ if not alertFns:
 if args.test:
 	print "Testing alerts one at a time..."
 	preamble = 'This is a test'
-	hotels = [{'name': 'Test hotel 1', 'distance': '2 blocks'}, {'name': 'Test hotel 2', 'distance': '5 blocks'}]
+	hotels = [{'name': 'Test hotel 1', 'distance': '2 blocks', 'rooms': 1, 'room': 'Queen/Queen suite'}, {'name': 'Test hotel 2', 'distance': '5 blocks', 'rooms': 5, 'room': 'Standard King'}]
 	for fn in alertFns:
 		fn(preamble, hotels)
 	print "Done"
 	exit(0)
 
-lastAlerts = None
+lastAlerts = set()
 
 def sessionSetup():
 	try:
@@ -237,38 +248,53 @@ def search(resp):
 	hotels = fromJS(parser.json)
 
 	print "Results:   (%s)" % datetime.now()
-	alert = []
+	alerts = []
 
+	print "   %-15s %-10s %-80s %s" % ('Distance', 'Price', 'Hotel', 'Room')
 	for hotel in hotels:
-		if hotel['blocks']:
+		for block in hotel['blocks']:
+			# Don't show hotels miles away unless requested
+			if hotel['distanceUnit'] == 3 and not args.show_all:
+				continue
+
 			connected = ('Skywalk to ICC' in (hotel['messageMap'] or ''))
 			simpleHotel = {
 				'name': parser.unescape(hotel['name']),
 				'distance': 'Skywalk' if connected else "%4.1f %s" % (hotel['distanceFromEvent'], distanceUnits.get(hotel['distanceUnit'], '???')),
+				'price': int(sum(inv['rate'] for inv in block['inventory'])),
+				'rooms': min(inv['available'] for inv in block['inventory']),
+				'room': parser.unescape(block['name']),
 			}
-			result = "%-15s %s" % (simpleHotel['distance'], simpleHotel['name'])
+			result = "%-15s $%-9s %-80s (%d) %s" % (simpleHotel['distance'], simpleHotel['price'], simpleHotel['name'], simpleHotel['rooms'], simpleHotel['room'])
 			# I don't think these distances (yards, meters, kilometers) actually appear in the results, but if they do assume it must be close enough regardless of --max-distance
-			if hotel['distanceUnit'] in (2, 4, 5) or \
-			   (hotel['distanceUnit'] == 1 and (args.max_distance is None or (isinstance(args.max_distance, float) and hotel['distanceFromEvent'] <= args.max_distance))) or \
-			   (args.max_distance == 'connected' and connected):
-				alert.append(simpleHotel)
+			closeEnough = hotel['distanceUnit'] in (2, 4, 5) or \
+			              (hotel['distanceUnit'] == 1 and (args.max_distance is None or (isinstance(args.max_distance, float) and hotel['distanceFromEvent'] <= args.max_distance))) or \
+			              (args.max_distance == 'connected' and connected)
+			cheapEnough = simpleHotel['price'] <= args.budget
+			regexMatch = args.hotel_regex.search(simpleHotel['name']) and args.room_regex.search(simpleHotel['room'])
+			if closeEnough and cheapEnough and regexMatch:
+				alerts.append(simpleHotel)
 				print ' !',
 			else:
 				print '  ',
 			print result
 
-	if alert:
-		if alert == lastAlerts:
-			print "Skipped alerts (no change to nearby hotel list)"
+	if alerts:
+		alertHash = {(alert['name'], alert['room']) for alert in alerts}
+		if alertHash <= lastAlerts:
+			print "Skipped alerts (no new rooms in nearby hotel list)"
 		else:
-			preamble = "%d %s near the ICC:" % (len(alert), 'hotel' if len(alert) == 1 else 'hotels')
+			numHotels = len(set(alert['name'] for alert in alerts))
+			preamble = "%d %s near the ICC:" % (numHotels, 'hotel' if numHotels == 1 else 'hotels')
 			for fn in alertFns:
 				# Run each alert on its own thread since some (e.g. popups) are blocking and some (e.g. e-mail) can throw
-				Thread(target = fn, args = (preamble, alert)).start()
+				Thread(target = fn, args = (preamble, alerts)).start()
 			print "Triggered alerts"
+	else:
+		alertHash = set()
 
 	print
-	lastAlerts = alert
+	lastAlerts = alertHash
 	return True
 
 while True:
