@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 from argparse import Action, ArgumentParser, ArgumentTypeError, SUPPRESS
-from datetime import datetime
+from datetime import datetime, timedelta
 from HTMLParser import HTMLParser
 from json import loads as fromJS
 from os.path import abspath, dirname, join as pathjoin
@@ -12,6 +12,9 @@ from time import sleep
 from urllib import urlencode
 from urllib2 import HTTPError, Request, URLError, urlopen
 import urllib, urllib2
+
+firstDay, lastDay, startDay = datetime(2017, 8, 12), datetime(2017, 8, 22), datetime(2017, 8, 17)
+eventUrl = 'https://aws.passkey.com/event/48980067/owner/10909638/rooms/select'
 
 distanceUnits = {
 	1: 'blocks',
@@ -38,7 +41,6 @@ class PasskeyParser(HTMLParser):
 		if self.json is True:
 			self.json = data
 
-firstDay, lastDay = datetime(2016, 7, 30), datetime(2016, 8, 9)
 def type_day(arg):
 	try:
 		d = datetime.strptime(arg, '%Y-%m-%d')
@@ -75,14 +77,13 @@ if version_info < (2, 7, 9):
 	exit(1)
 
 parser = ArgumentParser()
-validDays = ["2016-08-%02d" % d for d in range(1, 10)]
 parser.add_argument('--guests', type = int, default = 1, help = 'number of guests')
 parser.add_argument('--children', type = int, default = 0, help = 'number of children')
 parser.add_argument('--rooms', type = int, default = 1, help = 'number of rooms')
 group = parser.add_mutually_exclusive_group()
-group.add_argument('--checkin', type = type_day, metavar = 'YYYY-MM-DD', default = '2016-08-04', help = 'check in')
-group.add_argument('--wednesday', dest = 'checkin', action = 'store_const', const = '2016-08-03', help = 'check in on 2016-08-03')
-parser.add_argument('--checkout', type = type_day, metavar = 'YYYY-MM-DD', default = '2016-08-07', help = 'check out')
+group.add_argument('--checkin', type = type_day, metavar = 'YYYY-MM-DD', default = startDay.strftime('%Y-%m-%d'), help = 'check in')
+group.add_argument('--wednesday', dest = 'checkin', action = 'store_const', const = (startDay - timedelta(1)).strftime('%Y-%m-%d'), help = 'check in on Wednesday')
+parser.add_argument('--checkout', type = type_day, metavar = 'YYYY-MM-DD', default = (startDay + timedelta(3)).strftime('%Y-%m-%d'), help = 'check out')
 group = parser.add_mutually_exclusive_group()
 group.add_argument('--max-distance', type = type_distance, metavar = 'BLOCKS', help = "max hotel distance that triggers an alert (or 'connected' to require skywalk hotels)")
 group.add_argument('--connected', dest = 'max_distance', action = 'store_const', const = 'connected', help = 'shorthand for --max-distance connected')
@@ -229,7 +230,7 @@ def sessionSetup():
 		'blockMap.blocks[0].numberOfChildren': str(args.children),
 	}
 	try:
-		resp = urlopen(Request('https://aws.passkey.com/event/14276138/owner/10909638/rooms/select', urlencode(data), headers), context = sslCtx)
+		resp = urlopen(Request(eventUrl, urlencode(data), headers), context = sslCtx)
 	except URLError:
 		resp = None
 	if resp is None or resp.getcode() not in (200, 302):
