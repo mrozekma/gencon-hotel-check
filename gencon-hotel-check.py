@@ -216,7 +216,10 @@ def sessionSetup():
 		return None
 	cookies = resp.info()['Set-Cookie'].split(', ')
 	cookies = map(lambda cookie: cookie.split(';')[0], cookies)
-	headers = {'Cookie': ';'.join(cookies)}
+	headers = {
+		'Cookie': ';'.join(cookies),
+		'Host': 'book.passkey.com',
+	}
 
 	# Set search filter
 	print "Searching... (%d %s, %d %s, %s - %s, %s)" % (args.guests, 'guest' if args.guests == 1 else 'guests', args.rooms, 'room' if args.rooms == 1 else 'rooms', args.checkin, args.checkout, 'connected' if args.max_distance == 'connected' else 'downtown' if args.max_distance is None else "within %.1f blocks" % args.max_distance)
