@@ -13,8 +13,8 @@ from urllib import urlencode
 from urllib2 import HTTPError, Request, URLError, urlopen
 import urllib, urllib2
 
-firstDay, lastDay, startDay = datetime(2018, 7, 28), datetime(2018, 8, 7), datetime(2018, 8, 2)
-eventUrl = 'https://aws.passkey.com/event/49547714/owner/10909638/rooms/select'
+firstDay, lastDay, startDay = datetime(2019, 7, 27), datetime(2019, 8, 6), datetime(2019, 8, 1)
+eventUrl = 'https://aws.passkey.com/event/49822766/owner/10909638/rooms/select'
 
 distanceUnits = {
 	1: 'blocks',
