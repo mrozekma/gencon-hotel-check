@@ -2,7 +2,7 @@
 from argparse import Action, ArgumentParser, ArgumentTypeError, SUPPRESS
 from datetime import datetime, timedelta
 from HTMLParser import HTMLParser
-from json import loads as fromJS
+from json import loads as fromJS, dumps as toJS
 from os.path import abspath, dirname, join as pathjoin
 from re import compile as reCompile, IGNORECASE as RE_IGNORECASE
 from ssl import create_default_context as create_ssl_context, CERT_NONE, SSLError
@@ -14,7 +14,8 @@ from urllib2 import HTTPError, Request, URLError, urlopen
 import urllib, urllib2
 
 firstDay, lastDay, startDay = datetime(2019, 7, 27), datetime(2019, 8, 6), datetime(2019, 8, 1)
-eventUrl = 'https://aws.passkey.com/event/49822766/owner/10909638/rooms/select'
+eventId = 49822766
+ownerId = 10909638
 
 distanceUnits = {
 	1: 'blocks',
@@ -77,6 +78,7 @@ if version_info < (2, 7, 9):
 	exit(1)
 
 parser = ArgumentParser()
+parser.add_argument('--surname', '--lastname', help = 'if reusing a key, the surname of one of the guests on the existing reservation')
 parser.add_argument('--guests', type = int, default = 1, help = 'number of guests')
 parser.add_argument('--children', type = int, default = 0, help = 'number of children')
 parser.add_argument('--rooms', type = int, default = 1, help = 'number of rooms')
@@ -91,7 +93,6 @@ parser.add_argument('--budget', type = float, metavar = 'PRICE', default = '9999
 parser.add_argument('--hotel-regex', type = type_regex, metavar = 'PATTERN', default = reCompile('.*'), help = 'regular expression to match hotel name against')
 parser.add_argument('--room-regex', type = type_regex, metavar = 'PATTERN', default = reCompile('.*'), help = 'regular expression to match room against')
 parser.add_argument('--show-all', action = 'store_true', help = 'show all rooms, even if miles away (these rooms never trigger alerts)')
-parser.add_argument('--ssl-insecure', action = 'store_false', dest = 'ssl_cert_verify', help = SUPPRESS)
 group = parser.add_mutually_exclusive_group()
 group.add_argument('--delay', type = int, default = 1, metavar = 'MINS', help = 'search every MINS minute(s)')
 group.add_argument('--once', action = 'store_true', help = 'search once and exit')
@@ -107,18 +108,12 @@ group.add_argument('--browser', dest = 'alerts', action = 'append_const', const 
 group.add_argument('--email', dest = 'alerts', action = EmailAction, nargs = 3, metavar = ('HOST', 'FROM', 'TO'), help = 'send an e-mail')
 
 args = parser.parse_args()
-startUrl = "https://aws.passkey.com/reg/%s/null/null/1/0/null" % args.key
-
-sslCtx = create_ssl_context()
-if not args.ssl_cert_verify:
-	sslCtx.check_hostname = False
-	sslCtx.verify_mode = CERT_NONE
 
 # Attempt to check the version against Github, but ignore it if it fails
 # Only updating the version when a breaking bug is fixed (a crash or a failure to search correctly)
 try:
 	version = open(pathjoin(dirname(abspath(__file__)), 'version')).read()
-	resp = urlopen('https://raw.githubusercontent.com/mrozekma/gencon-hotel-check/master/version', context = sslCtx)
+	resp = urlopen('https://raw.githubusercontent.com/mrozekma/gencon-hotel-check/master/version')
 	if resp.getcode() == 200:
 		head = resp.read()
 		if version != head:
@@ -195,36 +190,22 @@ if args.test:
 	exit(0)
 
 lastAlerts = set()
+baseUrl = "https://book.passkey.com/event/%d/owner/%d" % (eventId, ownerId)
+opener = urllib2.build_opener(urllib2.HTTPCookieProcessor())
 
-def sessionSetup():
+def send(name, *args):
 	try:
-		resp = urlopen(startUrl, context = sslCtx)
+		resp = opener.open(*args)
+		if resp.getcode() != 200:
+			raise RuntimeError("%s failed: %d" % (name, resp.getcode()))
+		return resp
 	except URLError, e:
-		if isinstance(e.reason, SSLError) and e.reason.reason == 'CERTIFICATE_VERIFY_FAILED':
-			print e
-			print
-			print "If Python is having trouble finding your local certificate store, you can bypass this check with --ssl-insecure"
-			exit(1)
-		print "Session request failed: %s" % e
-		return None
-	if resp.getcode() != 200:
-		print "Session request failed: %d" % resp.getcode()
-		return None
+		raise RuntimeError("%s failed: %s" % (name, e))
 
-	if 'Set-Cookie' not in resp.info():
-		print "No session cookie received. Is your key correct?"
-		return None
-	cookies = resp.info()['Set-Cookie'].split(', ')
-	cookies = map(lambda cookie: cookie.split(';')[0], cookies)
-	headers = {
-		'Cookie': ';'.join(cookies),
-		'Host': 'book.passkey.com',
-	}
-
-	# Set search filter
-	print "Searching... (%d %s, %d %s, %s - %s, %s)" % (args.guests, 'guest' if args.guests == 1 else 'guests', args.rooms, 'room' if args.rooms == 1 else 'rooms', args.checkin, args.checkout, 'connected' if args.max_distance == 'connected' else 'downtown' if args.max_distance is None else "within %.1f blocks" % args.max_distance)
+def searchNew():
+	'''Search using a reservation key (for users who don't have a booking yet)'''
+	resp = send('Session request', "https://book.passkey.com/reg/%s/null/null/1/0/null" % args.key)
 	data = {
-		'hotelId': '0',
 		'blockMap.blocks[0].blockId': '0',
 		'blockMap.blocks[0].checkIn': args.checkin,
 		'blockMap.blocks[0].checkOut': args.checkout,
@@ -232,22 +213,48 @@ def sessionSetup():
 		'blockMap.blocks[0].numberOfRooms': str(args.rooms),
 		'blockMap.blocks[0].numberOfChildren': str(args.children),
 	}
-	try:
-		resp = urlopen(Request(eventUrl, urlencode(data), headers), context = sslCtx)
-	except URLError:
-		resp = None
-	if resp is None or resp.getcode() not in (200, 302):
-		print "Search failed"
-		return None
-	return resp
+	return send('Search', baseUrl + '/rooms/select', urlencode(data))
 
-def search(resp):
-	global lastAlerts
+def searchExisting(hash = []):
+	'''Search using an acknowledgement number (for users who have booked a room)'''
+	# The hash doesn't change, so it's only calculated the first time
+	if not hash:
+		send('Session request', baseUrl + '/home')
+		data = {
+			'ackNum': args.key,
+			'lastName': args.surname,
+		}
+		resp = send('Finding reservation', Request(baseUrl + '/reservation/find', toJS(data), {'Content-Type': 'application/json'}))
+		try:
+			respData = fromJS(resp.read())
+		except Exception, e:
+			raise RuntimeError("Failed to decode reservation: %s" % e)
+		if respData.get('ackNum', None) != args.key:
+			raise RuntimeError("Reservation not found. Are your acknowledgement number and surname correct?")
+		if 'hash' not in respData:
+			raise RuntimeError("Hash missing from reservation data")
+		hash.append(respData['hash'])
 
+	data = {
+		'blockMap': {
+			'blocks': [{
+				'blockId': '0',
+				'checkIn': args.checkin,
+				'checkOut': args.checkout,
+				'numberOfGuests': str(args.guests),
+				'numberOfRooms': str(args.rooms),
+				'numberOfChildren': str(args.children),
+			}]
+		}
+	}
+	send('Loading existing reservation', baseUrl + "/r/%s/%s" % (args.key, hash[0]))
+	send('Search', Request(baseUrl + '/rooms/select/search', toJS(data), headers = {'Content-Type': 'application/json'}))
+	return send('List', baseUrl + '/list/hotels')
+
+def parseResults(resp):
 	parser = PasskeyParser(resp)
 	if not parser.json:
-		print "Failed to find search results"
-		return False
+		raise RuntimeError("Failed to find search results")
 
 	hotels = fromJS(parser.json)
 
@@ -283,6 +290,7 @@ def search(resp):
 				print '  ',
 			print result
 
+	global lastAlerts
 	if alerts:
 		alertHash = {(alert['name'], alert['room']) for alert in alerts}
 		if alertHash <= lastAlerts:
@@ -301,10 +309,20 @@ def search(resp):
 	lastAlerts = alertHash
 	return True
 
+if '-' in args.key:
+	search = searchNew
+else:
+	if args.surname is None:
+		print "Your key does not appear to be valid. If this is an acknowledgement number for an existing reservation, you must also pass --surname"
+		exit(1)
+	search = searchExisting
+
 while True:
-	resp = sessionSetup()
-	if resp is not None:
-		search(resp)
-		if args.once:
-			exit(0)
+	print "Searching... (%d %s, %d %s, %s - %s, %s)" % (args.guests, 'guest' if args.guests == 1 else 'guests', args.rooms, 'room' if args.rooms == 1 else 'rooms', args.checkin, args.checkout, 'connected' if args.max_distance == 'connected' else 'downtown' if args.max_distance is None else "within %.1f blocks" % args.max_distance)
+	try:
+		parseResults(search())
+	except Exception, e:
+		print str(e)
+	if args.once:
+		exit(0)
 	sleep(60 * args.delay)
