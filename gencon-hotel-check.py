@@ -122,6 +122,8 @@ try:
 except (HTTPError, IOError):
 	pass
 
+baseUrl = "https://book.passkey.com/event/%d/owner/%d" % (eventId, ownerId)
+
 # Setup the alert handlers
 alertFns = []
 success = True
@@ -147,7 +149,7 @@ for alert in args.alerts or []:
 		alertFns.append(lambda preamble, hotels, cmd = alert[1]: subprocess.Popen([cmd] + [hotel['name'] for hotel in hotels]))
 	elif alert[0] == 'browser':
 		import webbrowser
-		alertFns.append(lambda preamble, hotels: webbrowser.open(startUrl))
+		alertFns.append(lambda preamble, hotels: webbrowser.open(baseUrl + '/home'))
 	elif alert[0] == 'email':
 		from email.mime.text import MIMEText
 		import getpass, smtplib, socket
@@ -164,7 +166,7 @@ for alert in args.alerts or []:
 		try:
 			smtpConnect()
 			def handle(preamble, hotels):
-				msg = MIMEText("%s\n\n%s\n\n%s" % (preamble, '\n'.join("  * %s: %s: %s" % (hotel['distance'], hotel['name'].encode('utf-8'), hotel['room'].encode('utf-8')) for hotel in hotels), startUrl), 'plain', 'utf-8')
+				msg = MIMEText("%s\n\n%s\n\n%s" % (preamble, '\n'.join("  * %s: %s: %s" % (hotel['distance'], hotel['name'].encode('utf-8'), hotel['room'].encode('utf-8')) for hotel in hotels), baseUrl + '/home'), 'plain', 'utf-8')
 				msg['Subject'] = 'Gencon Hotel Search'
 				msg['From'] = fromEmail
 				msg['To'] = toEmail
@@ -190,7 +192,6 @@ if args.test:
 	exit(0)
 
 lastAlerts = set()
-baseUrl = "https://book.passkey.com/event/%d/owner/%d" % (eventId, ownerId)
 opener = urllib2.build_opener(urllib2.HTTPCookieProcessor())
 
 def send(name, *args):
