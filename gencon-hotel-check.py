@@ -1,17 +1,27 @@
 #!/usr/bin/env python2
+from __future__ import print_function
 from argparse import Action, ArgumentParser, ArgumentTypeError, SUPPRESS
 from datetime import datetime, timedelta
-from HTMLParser import HTMLParser
 from json import loads as fromJS, dumps as toJS
 from os.path import abspath, dirname, join as pathjoin
 from re import compile as reCompile, IGNORECASE as RE_IGNORECASE
 from ssl import create_default_context as create_ssl_context, CERT_NONE, SSLError
-from sys import version_info
+from sys import stdout, version_info
 from threading import Thread
 from time import sleep
-from urllib import urlencode
-from urllib2 import HTTPError, Request, URLError, urlopen
-import urllib, urllib2
+
+if version_info < (2, 7, 9):
+	print("Requires Python 2.7.9+")
+	exit(1)
+elif version_info.major == 2:
+	from HTMLParser import HTMLParser
+	from urllib import urlencode
+	from urllib2 import HTTPCookieProcessor, HTTPError, Request, URLError, urlopen, build_opener
+else:
+	from html.parser import HTMLParser
+	from urllib.error import HTTPError, URLError
+	from urllib.parse import urlencode
+	from urllib.request import HTTPCookieProcessor, Request, urlopen, build_opener
 
 firstDay, lastDay, startDay = datetime(2019, 7, 27), datetime(2019, 8, 6), datetime(2019, 8, 1)
 eventId = 49822766
@@ -29,7 +39,7 @@ class PasskeyParser(HTMLParser):
 	def __init__(self, resp):
 		HTMLParser.__init__(self)
 		self.json = None
-		self.feed(resp.read())
+		self.feed(resp.read().decode('utf8'))
 		self.close()
 
 	def handle_starttag(self, tag, attrs):
@@ -41,6 +51,12 @@ class PasskeyParser(HTMLParser):
 	def handle_data(self, data):
 		if self.json is True:
 			self.json = data
+
+try:
+	from html import unescape
+	PasskeyParser.unescape = lambda self, text: unescape(text)
+except ImportError as e:
+	pass
 
 def type_day(arg):
 	try:
@@ -62,7 +78,7 @@ def type_distance(arg):
 def type_regex(arg):
 	try:
 		return reCompile(arg, RE_IGNORECASE)
-	except Exception, e:
+	except Exception as e:
 		raise ArgumentTypeError("invalid regex '%s': %s" % (arg, e))
 
 class EmailAction(Action):
@@ -72,10 +88,6 @@ class EmailAction(Action):
 			dest = []
 			setattr(namespace, self.dest, dest)
 		dest.append(tuple(['email'] + values))
-
-if version_info < (2, 7, 9):
-	print "Requires Python 2.7.9+"
-	exit(1)
 
 parser = ArgumentParser()
 parser.add_argument('--surname', '--lastname', help = 'if reusing a key, the surname of one of the guests on the existing reservation')
@@ -117,8 +129,8 @@ try:
 	if resp.getcode() == 200:
 		head = resp.read()
 		if version != head:
-			print "Warning: This script is out-of-date. If you downloaded it via git, use 'git pull' to fetch the latest version. Otherwise, visit https://github.com/mrozekma/gencon-hotel-check"
-			print
+			print("Warning: This script is out-of-date. If you downloaded it via git, use 'git pull' to fetch the latest version. Otherwise, visit https://github.com/mrozekma/gencon-hotel-check")
+			print()
 except (HTTPError, IOError):
 	pass
 
@@ -134,15 +146,15 @@ for alert in args.alerts or []:
 			alertFns.append(lambda preamble, hotels: win32api.MessageBox(0, 'Gencon Hotel Search', "%s\n\n%s" % (preamble, '\n'.join("%s: %s: %s" % (hotel['distance'], hotel['name'], hotel['room']) for hotel in hotels))))
 		except ImportError:
 			try:
-				import Tkinter, tkMessageBox
+				import tkinter, tkinter.messagebox
 				def handle(preamble, hotels):
-					window = Tkinter.Tk()
+					window = tkinter.Tk()
 					window.wm_withdraw()
-					tkMessageBox.showinfo(title = 'Gencon Hotel Search', message = "%s\n\n%s" % (preamble, '\n'.join("%s: %s: %s" % (hotel['distance'], hotel['name'], hotel['room']) for hotel in hotels)))
+					tkinter.messagebox.showinfo(title = 'Gencon Hotel Search', message = "%s\n\n%s" % (preamble, '\n'.join("%s: %s: %s" % (hotel['distance'], hotel['name'], hotel['room']) for hotel in hotels)))
 					window.destroy()
 				alertFns.append(handle)
 			except ImportError:
-				print "Unable to show a popup. Install either win32api (if on Windows) or Tkinter"
+				print("Unable to show a popup. Install either win32api (if on Windows) or Tkinter")
 				success = False
 	elif alert[0] == 'cmd':
 		import subprocess
@@ -172,27 +184,27 @@ for alert in args.alerts or []:
 				msg['To'] = toEmail
 				smtpConnect().sendmail(fromEmail, toEmail, msg.as_string())
 			alertFns.append(handle)
-		except Exception, e:
-			print e
+		except Exception as e:
+			print(e)
 			success = False
 
 if not success:
 	exit(1)
 if not alertFns:
-	print "Warning: You have no alert methods selected, so you're not going to know about a match unless you're staring at this window when it happens. See the README for more information"
-	print
+	print("Warning: You have no alert methods selected, so you're not going to know about a match unless you're staring at this window when it happens. See the README for more information")
+	print()
 
 if args.test:
-	print "Testing alerts one at a time..."
+	print("Testing alerts one at a time...")
 	preamble = 'This is a test'
 	hotels = [{'name': 'Test hotel 1', 'distance': '2 blocks', 'rooms': 1, 'room': 'Queen/Queen suite'}, {'name': 'Test hotel 2', 'distance': '5 blocks', 'rooms': 5, 'room': 'Standard King'}]
 	for fn in alertFns:
 		fn(preamble, hotels)
-	print "Done"
+	print("Done")
 	exit(0)
 
 lastAlerts = set()
-opener = urllib2.build_opener(urllib2.HTTPCookieProcessor())
+opener = build_opener(HTTPCookieProcessor())
 
 def send(name, *args):
 	try:
@@ -200,7 +212,7 @@ def send(name, *args):
 		if resp.getcode() != 200:
 			raise RuntimeError("%s failed: %d" % (name, resp.getcode()))
 		return resp
-	except URLError, e:
+	except URLError as e:
 		raise RuntimeError("%s failed: %s" % (name, e))
 
 def searchNew():
@@ -214,7 +226,7 @@ def searchNew():
 		'blockMap.blocks[0].numberOfRooms': str(args.rooms),
 		'blockMap.blocks[0].numberOfChildren': str(args.children),
 	}
-	return send('Search', baseUrl + '/rooms/select', urlencode(data))
+	return send('Search', baseUrl + '/rooms/select', urlencode(data).encode('utf8'))
 
 def searchExisting(hash = []):
 	'''Search using an acknowledgement number (for users who have booked a room)'''
@@ -225,10 +237,10 @@ def searchExisting(hash = []):
 			'ackNum': args.key,
 			'lastName': args.surname,
 		}
-		resp = send('Finding reservation', Request(baseUrl + '/reservation/find', toJS(data), {'Content-Type': 'application/json'}))
+		resp = send('Finding reservation', Request(baseUrl + '/reservation/find', toJS(data).encode('utf8'), {'Content-Type': 'application/json'}))
 		try:
 			respData = fromJS(resp.read())
-		except Exception, e:
+		except Exception as e:
 			raise RuntimeError("Failed to decode reservation: %s" % e)
 		if respData.get('ackNum', None) != args.key:
 			raise RuntimeError("Reservation not found. Are your acknowledgement number and surname correct?")
@@ -249,7 +261,7 @@ def searchExisting(hash = []):
 		}
 	}
 	send('Loading existing reservation', baseUrl + "/r/%s/%s" % (args.key, hash[0]))
-	send('Search', Request(baseUrl + '/rooms/select/search', toJS(data), headers = {'Content-Type': 'application/json'}))
+	send('Search', Request(baseUrl + '/rooms/select/search', toJS(data).encode('utf8'), headers = {'Content-Type': 'application/json'}))
 	return send('List', baseUrl + '/list/hotels')
 
 def parseResults(resp):
@@ -259,10 +271,10 @@ def parseResults(resp):
 
 	hotels = fromJS(parser.json)
 
-	print "Results:   (%s)" % datetime.now()
+	print("Results:   (%s)" % datetime.now())
 	alerts = []
 
-	print "   %-15s %-10s %-80s %s" % ('Distance', 'Price', 'Hotel', 'Room')
+	print("   %-15s %-10s %-80s %s" % ('Distance', 'Price', 'Hotel', 'Room'))
 	for hotel in hotels:
 		for block in hotel['blocks']:
 			# Don't show hotels miles away unless requested
@@ -286,27 +298,27 @@ def parseResults(resp):
 			regexMatch = args.hotel_regex.search(simpleHotel['name']) and args.room_regex.search(simpleHotel['room'])
 			if closeEnough and cheapEnough and regexMatch:
 				alerts.append(simpleHotel)
-				print ' !',
+				stdout.write(' ! ')
 			else:
-				print '  ',
-			print result
+				stdout.write('   ')
+			print(result)
 
 	global lastAlerts
 	if alerts:
 		alertHash = {(alert['name'], alert['room']) for alert in alerts}
 		if alertHash <= lastAlerts:
-			print "Skipped alerts (no new rooms in nearby hotel list)"
+			print("Skipped alerts (no new rooms in nearby hotel list)")
 		else:
 			numHotels = len(set(alert['name'] for alert in alerts))
 			preamble = "%d %s near the ICC:" % (numHotels, 'hotel' if numHotels == 1 else 'hotels')
 			for fn in alertFns:
 				# Run each alert on its own thread since some (e.g. popups) are blocking and some (e.g. e-mail) can throw
 				Thread(target = fn, args = (preamble, alerts)).start()
-			print "Triggered alerts"
+			print("Triggered alerts")
 	else:
 		alertHash = set()
 
-	print
+	print()
 	lastAlerts = alertHash
 	return True
 
@@ -314,16 +326,16 @@ if '-' in args.key:
 	search = searchNew
 else:
 	if args.surname is None:
-		print "Your key does not appear to be valid. If this is an acknowledgement number for an existing reservation, you must also pass --surname"
+		print("Your key does not appear to be valid. If this is an acknowledgement number for an existing reservation, you must also pass --surname")
 		exit(1)
 	search = searchExisting
 
 while True:
-	print "Searching... (%d %s, %d %s, %s - %s, %s)" % (args.guests, 'guest' if args.guests == 1 else 'guests', args.rooms, 'room' if args.rooms == 1 else 'rooms', args.checkin, args.checkout, 'connected' if args.max_distance == 'connected' else 'downtown' if args.max_distance is None else "within %.1f blocks" % args.max_distance)
+	print("Searching... (%d %s, %d %s, %s - %s, %s)" % (args.guests, 'guest' if args.guests == 1 else 'guests', args.rooms, 'room' if args.rooms == 1 else 'rooms', args.checkin, args.checkout, 'connected' if args.max_distance == 'connected' else 'downtown' if args.max_distance is None else "within %.1f blocks" % args.max_distance))
 	try:
 		parseResults(search())
-	except Exception, e:
-		print str(e)
+	except Exception as e:
+		print(str(e))
 	if args.once:
 		exit(0)
 	sleep(60 * args.delay)
