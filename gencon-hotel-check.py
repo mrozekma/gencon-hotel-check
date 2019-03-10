@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 from __future__ import print_function
-from argparse import Action, ArgumentParser, ArgumentTypeError, SUPPRESS
+from argparse import Action, ArgumentParser, ArgumentError, ArgumentTypeError, SUPPRESS
 from datetime import datetime, timedelta
 from json import loads as fromJS, dumps as toJS
 from os.path import abspath, dirname, join as pathjoin
@@ -81,8 +81,20 @@ def type_regex(arg):
 	except Exception as e:
 		raise ArgumentTypeError("invalid regex '%s': %s" % (arg, e))
 
+class PasskeyUrlAction(Action):
+	def __call__(self, parser, namespace, values, option_string = None):
+		m = reCompile('^https://book.passkey.com/reg/([0-9A-Z]{8}-[0-9A-Z]{4})/([0-9a-f]{64})$').match(values)
+		if m:
+			setattr(namespace, self.dest, m.groups())
+		else:
+			raise ArgumentError(self, "invalid passkey url: '%s'" % values)
+
+class SurnameAction(Action):
+	def __call__(self, parser, namespace, values, option_string = None):
+		raise ArgumentError(self, "option no longer exists. Surname should be passed along with the key")
+
 class EmailAction(Action):
-	def __call__(self, parser, namespace, values, option_string=None):
+	def __call__(self, parser, namespace, values, option_string = None):
 		dest = getattr(namespace, self.dest)
 		if dest is None:
 			dest = []
@@ -90,7 +102,7 @@ class EmailAction(Action):
 		dest.append(tuple(['email'] + values))
 
 parser = ArgumentParser()
-parser.add_argument('--surname', '--lastname', help = 'if reusing a key, the surname of one of the guests on the existing reservation')
+parser.add_argument('--surname', '--lastname', action = SurnameAction, help = SUPPRESS)
 parser.add_argument('--guests', type = int, default = 1, help = 'number of guests')
 parser.add_argument('--children', type = int, default = 0, help = 'number of children')
 parser.add_argument('--rooms', type = int, default = 1, help = 'number of rooms')
@@ -111,7 +123,9 @@ group.add_argument('--once', action = 'store_true', help = 'search once and exit
 parser.add_argument('--test', action = 'store_true', dest = 'test', help = 'trigger every specified alert and exit')
 
 group = parser.add_argument_group('required arguments')
-group.add_argument('--key', required = True, help = 'key (see the README for more information)')
+# Both of these set 'key'; only one of them is required
+group.add_argument('--key', nargs = 2, metavar = ('KEY', 'AUTH'), help = 'key (see the README for more information)')
+group.add_argument('--url', action = PasskeyUrlAction, dest = 'key', help = 'passkey URL containing your key')
 
 group = parser.add_argument_group('alerts')
 group.add_argument('--popup', dest = 'alerts', action = 'append_const', const = ('popup',), help = 'show a dialog box')
@@ -217,7 +231,7 @@ def send(name, *args):
 
 def searchNew():
 	'''Search using a reservation key (for users who don't have a booking yet)'''
-	resp = send('Session request', "https://book.passkey.com/reg/%s/null/null/1/0/null" % args.key)
+	resp = send('Session request', "https://book.passkey.com/reg/%s/%s" % tuple(args.key))
 	data = {
 		'blockMap.blocks[0].blockId': '0',
 		'blockMap.blocks[0].checkIn': args.checkin,
@@ -234,15 +248,15 @@ def searchExisting(hash = []):
 	if not hash:
 		send('Session request', baseUrl + '/home')
 		data = {
-			'ackNum': args.key,
-			'lastName': args.surname,
+			'ackNum': args.key[0],
+			'lastName': args.key[1],
 		}
 		resp = send('Finding reservation', Request(baseUrl + '/reservation/find', toJS(data).encode('utf8'), {'Content-Type': 'application/json'}))
 		try:
 			respData = fromJS(resp.read())
 		except Exception as e:
 			raise RuntimeError("Failed to decode reservation: %s" % e)
-		if respData.get('ackNum', None) != args.key:
+		if respData.get('ackNum', None) != args.key[0]:
 			raise RuntimeError("Reservation not found. Are your acknowledgement number and surname correct?")
 		if 'hash' not in respData:
 			raise RuntimeError("Hash missing from reservation data")
@@ -258,13 +272,13 @@ def searchExisting(hash = []):
 				'numberOfRooms': str(args.rooms),
 				'numberOfChildren': str(args.children),
 			}]
-		}
+		},
 	}
-	send('Loading existing reservation', baseUrl + "/r/%s/%s" % (args.key, hash[0]))
+	send('Loading existing reservation', baseUrl + "/r/%s/%s" % (args.key[0], hash[0]))
 	send('Search', Request(baseUrl + '/rooms/select/search', toJS(data).encode('utf8'), headers = {'Content-Type': 'application/json'}))
-	return send('List', baseUrl + '/list/hotels')
 
-def parseResults(resp):
+def parseResults():
+	resp = send('List', baseUrl + '/list/hotels')
 	parser = PasskeyParser(resp)
 	if not parser.json:
 		raise RuntimeError("Failed to find search results")
@@ -289,6 +303,8 @@ def parseResults(resp):
 				'rooms': min(inv['available'] for inv in block['inventory']),
 				'room': parser.unescape(block['name']),
 			}
+			if simpleHotel['rooms'] == 0:
+				continue
 			result = "%-15s $%-9s %-80s (%d) %s" % (simpleHotel['distance'], simpleHotel['price'], simpleHotel['name'], simpleHotel['rooms'], simpleHotel['room'])
 			# I don't think these distances (yards, meters, kilometers) actually appear in the results, but if they do assume it must be close enough regardless of --max-distance
 			closeEnough = hotel['distanceUnit'] in (2, 4, 5) or \
@@ -322,18 +338,12 @@ def parseResults(resp):
 	lastAlerts = alertHash
 	return True
 
-if '-' in args.key:
-	search = searchNew
-else:
-	if args.surname is None:
-		print("Your key does not appear to be valid. If this is an acknowledgement number for an existing reservation, you must also pass --surname")
-		exit(1)
-	search = searchExisting
-
+search = searchNew if '-' in args.key[0] else searchExisting
 while True:
 	print("Searching... (%d %s, %d %s, %s - %s, %s)" % (args.guests, 'guest' if args.guests == 1 else 'guests', args.rooms, 'room' if args.rooms == 1 else 'rooms', args.checkin, args.checkout, 'connected' if args.max_distance == 'connected' else 'downtown' if args.max_distance is None else "within %.1f blocks" % args.max_distance))
 	try:
-		parseResults(search())
+		search()
+		parseResults()
 	except Exception as e:
 		print(str(e))
 	if args.once:
