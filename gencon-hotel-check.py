@@ -141,7 +141,7 @@ try:
 	version = open(pathjoin(dirname(abspath(__file__)), 'version')).read()
 	resp = urlopen('https://raw.githubusercontent.com/mrozekma/gencon-hotel-check/master/version')
 	if resp.getcode() == 200:
-		head = resp.read()
+		head = resp.read().decode('utf8')
 		if version != head:
 			print("Warning: This script is out-of-date. If you downloaded it via git, use 'git pull' to fetch the latest version. Otherwise, visit https://github.com/mrozekma/gencon-hotel-check")
 			print()
