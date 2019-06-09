@@ -83,7 +83,7 @@ def type_regex(arg):
 
 class PasskeyUrlAction(Action):
 	def __call__(self, parser, namespace, values, option_string = None):
-		m = reCompile('^https://book.passkey.com/reg/([0-9A-Z]{8}-[0-9A-Z]{4})/([0-9a-f]{64})$').match(values)
+		m = reCompile('^https://book.passkey.com/reg/([0-9A-Z]{8}-[0-9A-Z]{4})/([0-9a-f]{1,64})$').match(values)
 		if m:
 			setattr(namespace, self.dest, m.groups())
 		else:
