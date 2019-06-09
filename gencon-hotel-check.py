@@ -172,7 +172,7 @@ for alert in args.alerts or []:
 				success = False
 	elif alert[0] == 'cmd':
 		import subprocess
-		alertFns.append(lambda preamble, hotels, cmd = alert[1]: subprocess.Popen([cmd] + [hotel['name'] for hotel in hotels]))
+		alertFns.append(lambda preamble, hotels, cmd = alert[1]: subprocess.Popen([cmd] + ["%s: %s" % (hotel['name'], hotel['room']) for hotel in hotels]))
 	elif alert[0] == 'browser':
 		import webbrowser
 		alertFns.append(lambda preamble, hotels: webbrowser.open(baseUrl + '/home'))
