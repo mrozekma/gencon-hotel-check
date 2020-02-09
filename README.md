@@ -2,7 +2,7 @@
 
 This script polls the Gencon housing website looking for hotel rooms near the ICC, and alerts you in a variety of ways when available rooms are found. It requires a relatively modern version of [Python](https://www.python.org/) 2 (2.7.9+) or 3.
 
-This was most recently updated for Gencon 2019. If it's currently a later year, I'll probably be putting out an update soon after housing opens. If that doesn't happen, you can probably figure out [what to edit](https://github.com/mrozekma/gencon-hotel-check/blob/master/gencon-hotel-check.py#L26-L27) to get it working assuming nothing major has changed on the housing website.
+This was most recently updated for Gencon 2020. If it's currently a later year, I'll probably be putting out an update soon after housing opens. If that doesn't happen, you can probably figure out [what to edit](https://github.com/mrozekma/gencon-hotel-check/blob/master/gencon-hotel-check.py#L26-L27) to get it working assuming nothing major has changed on the housing website.
 
 ## Output
 

@@ -23,8 +23,8 @@ else:
 	from urllib.parse import urlencode
 	from urllib.request import HTTPCookieProcessor, Request, urlopen, build_opener
 
-firstDay, lastDay, startDay = datetime(2019, 7, 27), datetime(2019, 8, 6), datetime(2019, 8, 1)
-eventId = 49822766
+firstDay, lastDay, startDay = datetime(2020, 7, 25), datetime(2020, 8, 4), datetime(2020, 7, 30)
+eventId = 50023680
 ownerId = 10909638
 
 distanceUnits = {
@@ -134,6 +134,10 @@ group.add_argument('--browser', dest = 'alerts', action = 'append_const', const 
 group.add_argument('--email', dest = 'alerts', action = EmailAction, nargs = 3, metavar = ('HOST', 'FROM', 'TO'), help = 'send an e-mail')
 
 args = parser.parse_args()
+
+if args.key is None and not args.test:
+	parser.print_usage()
+	exit(1)
 
 # Attempt to check the version against Github, but ignore it if it fails
 # Only updating the version when a breaking bug is fixed (a crash or a failure to search correctly)
