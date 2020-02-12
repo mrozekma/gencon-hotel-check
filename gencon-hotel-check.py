@@ -185,25 +185,29 @@ for alert in args.alerts or []:
 		import getpass, smtplib, socket
 		_, host, fromEmail, toEmail = alert
 		password = getpass.getpass("Enter password for %s (or blank if %s requires no authentication): " % (fromEmail, host))
-		def smtpConnect():
+		def closure(host, fromEmail, toEmail):
+			def smtpConnect():
+				try:
+					smtp = smtplib.SMTP_SSL(host)
+				except socket.error:
+					smtp = smtplib.SMTP(host)
+				if password:
+					smtp.login(fromEmail, password)
+				return smtp
 			try:
-				smtp = smtplib.SMTP_SSL(host)
-			except socket.error:
-				smtp = smtplib.SMTP(host)
-			if password:
-				smtp.login(fromEmail, password)
-			return smtp
-		try:
-			smtpConnect()
-			def handle(preamble, hotels):
-				msg = MIMEText("%s\n\n%s\n\n%s" % (preamble, '\n'.join("  * %s: %s: %s" % (hotel['distance'], hotel['name'].encode('utf-8'), hotel['room'].encode('utf-8')) for hotel in hotels), baseUrl + '/home'), 'plain', 'utf-8')
-				msg['Subject'] = 'Gencon Hotel Search'
-				msg['From'] = fromEmail
-				msg['To'] = toEmail
-				smtpConnect().sendmail(fromEmail, toEmail, msg.as_string())
-			alertFns.append(handle)
-		except Exception as e:
-			print(e)
+				smtpConnect()
+				def handle(preamble, hotels):
+					msg = MIMEText("%s\n\n%s\n\n%s" % (preamble, '\n'.join("  * %s: %s: %s" % (hotel['distance'], hotel['name'].encode('utf-8'), hotel['room'].encode('utf-8')) for hotel in hotels), baseUrl + '/home'), 'plain', 'utf-8')
+					msg['Subject'] = 'Gencon Hotel Search'
+					msg['From'] = fromEmail
+					msg['To'] = toEmail
+					smtpConnect().sendmail(fromEmail, toEmail, msg.as_string())
+				alertFns.append(handle)
+				return True
+			except Exception as e:
+				print(e)
+				return False
+		if not closure(host, fromEmail, toEmail):
 			success = False
 
 if not success:
