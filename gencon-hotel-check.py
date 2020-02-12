@@ -201,7 +201,7 @@ for alert in args.alerts or []:
 					msg['Subject'] = 'Gencon Hotel Search'
 					msg['From'] = fromEmail
 					msg['To'] = toEmail
-					smtpConnect().sendmail(fromEmail, toEmail, msg.as_string())
+					smtpConnect().sendmail(fromEmail, toEmail.split(','), msg.as_string())
 				alertFns.append(handle)
 				return True
 			except Exception as e:
