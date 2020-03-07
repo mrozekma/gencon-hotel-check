@@ -81,17 +81,36 @@ def type_regex(arg):
 	except Exception as e:
 		raise ArgumentTypeError("invalid regex '%s': %s" % (arg, e))
 
+class KeyAction(Action):
+	def __call__(self, parser, namespace, values, option_string = None):
+		key, auth = values
+		if reCompile('[0-9A-Z]{8}-[0-9A-Z]{4}').match(key):
+			# New reservation
+			if not reCompile('[0-9a-f]{1,64}').match(auth):
+				raise ValueError("invalid (new) key auth")
+		elif reCompile('[0-9A-Z]{8}').match(key):
+			# Existing reservation
+			if not reCompile("[0-9a-f]{32}").match(auth):
+				raise ValueError("invalid (existing) key auth")
+		else:
+			raise ValueError("invalid key")
+		setattr(namespace, self.dest, values)
+
 class PasskeyUrlAction(Action):
 	def __call__(self, parser, namespace, values, option_string = None):
-		m = reCompile('^https://book.passkey.com/reg/([0-9A-Z]{8}-[0-9A-Z]{4})/([0-9a-f]{1,64})$').match(values)
-		if m:
-			setattr(namespace, self.dest, m.groups())
-		else:
-			raise ArgumentError(self, "invalid passkey url: '%s'" % values)
+		for pattern in (
+			'^https://book.passkey.com/reg/([0-9A-Z]{8}-[0-9A-Z]{4})/([0-9a-f]{1,64})$',
+			'^https://book.passkey.com/event/[0-9]+/owner/[0-9]+/r/([0-9A-Z]{8})/([0-9a-f]{32})',
+		):
+			m = reCompile(pattern).match(values)
+			if m:
+				setattr(namespace, self.dest, m.groups())
+				return
+		raise ArgumentError(self, "invalid passkey url: '%s'" % values)
 
 class SurnameAction(Action):
 	def __call__(self, parser, namespace, values, option_string = None):
-		raise ArgumentError(self, "option no longer exists. Surname should be passed along with the key")
+		raise ArgumentError(self, "option no longer exists. Existing reservation lookups are now done with your hash instead of your surname")
 
 class EmailAction(Action):
 	def __call__(self, parser, namespace, values, option_string = None):
@@ -124,7 +143,7 @@ parser.add_argument('--test', action = 'store_true', dest = 'test', help = 'trig
 
 group = parser.add_argument_group('required arguments')
 # Both of these set 'key'; only one of them is required
-group.add_argument('--key', nargs = 2, metavar = ('KEY', 'AUTH'), help = 'key (see the README for more information)')
+group.add_argument('--key', action = KeyAction, nargs = 2, metavar = ('KEY', 'AUTH'), help = 'key (see the README for more information)')
 group.add_argument('--url', action = PasskeyUrlAction, dest = 'key', help = 'passkey URL containing your key')
 
 group = parser.add_argument_group('alerts')
@@ -250,26 +269,8 @@ def searchNew():
 	}
 	return send('Search', baseUrl + '/rooms/select', urlencode(data).encode('utf8'))
 
-def searchExisting(hash = []):
+def searchExisting():
 	'''Search using an acknowledgement number (for users who have booked a room)'''
-	# The hash doesn't change, so it's only calculated the first time
-	if not hash:
-		send('Session request', baseUrl + '/home')
-		data = {
-			'ackNum': args.key[0],
-			'lastName': args.key[1],
-		}
-		resp = send('Finding reservation', Request(baseUrl + '/reservation/find', toJS(data).encode('utf8'), {'Content-Type': 'application/json'}))
-		try:
-			respData = fromJS(resp.read())
-		except Exception as e:
-			raise RuntimeError("Failed to decode reservation: %s" % e)
-		if respData.get('ackNum', None) != args.key[0]:
-			raise RuntimeError("Reservation not found. Are your acknowledgement number and surname correct?")
-		if 'hash' not in respData:
-			raise RuntimeError("Hash missing from reservation data")
-		hash.append(respData['hash'])
-
 	data = {
 		'blockMap': {
 			'blocks': [{
@@ -282,7 +283,7 @@ def searchExisting(hash = []):
 			}]
 		},
 	}
-	send('Loading existing reservation', baseUrl + "/r/%s/%s" % (args.key[0], hash[0]))
+	send('Loading existing reservation', baseUrl + "/r/%s/%s" % tuple(args.key))
 	send('Search', Request(baseUrl + '/rooms/select/search', toJS(data).encode('utf8'), headers = {'Content-Type': 'application/json'}))
 
 def parseResults():
