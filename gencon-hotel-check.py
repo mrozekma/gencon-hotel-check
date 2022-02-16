@@ -14,17 +14,21 @@ if version_info < (2, 7, 9):
 	print("Requires Python 2.7.9+")
 	exit(1)
 elif version_info.major == 2:
+	from cookielib import CookieJar
 	from HTMLParser import HTMLParser
 	from urllib import urlencode
 	from urllib2 import HTTPCookieProcessor, HTTPError, Request, URLError, urlopen, build_opener
+	from urlparse import urlparse
 else:
 	from html.parser import HTMLParser
+	from http.cookiejar import CookieJar
 	from urllib.error import HTTPError, URLError
-	from urllib.parse import urlencode
+	from urllib.parse import urlencode, urlparse
 	from urllib.request import HTTPCookieProcessor, Request, urlopen, build_opener
 
-firstDay, lastDay, startDay = datetime(2020, 7, 25), datetime(2020, 8, 4), datetime(2020, 7, 30)
-eventId = 50023680
+
+firstDay, lastDay, startDay = datetime(2022, 7, 30), datetime(2022, 8, 9), datetime(2022, 8, 4)
+eventId = 50268617
 ownerId = 10909638
 
 distanceUnits = {
@@ -98,15 +102,11 @@ class KeyAction(Action):
 
 class PasskeyUrlAction(Action):
 	def __call__(self, parser, namespace, values, option_string = None):
-		for pattern in (
-			'^https://book.passkey.com/reg/([0-9A-Z]{8}-[0-9A-Z]{4})/([0-9a-f]{1,64})$',
-			'^https://book.passkey.com/event/[0-9]+/owner/[0-9]+/r/([0-9A-Z]{8})/([0-9a-f]{32})',
-		):
-			m = reCompile(pattern).match(values)
-			if m:
-				setattr(namespace, self.dest, m.groups())
-				return
-		raise ArgumentError(self, "invalid passkey url: '%s'" % values)
+		url = urlparse(values)
+		if url.netloc == 'book.passkey.com' and url.path == '/entry' and 'token=' in url.query:
+			setattr(namespace, self.dest, values)
+		else:
+			raise ArgumentError(self, "invalid passkey url: '%s'" % values)
 
 class SurnameAction(Action):
 	def __call__(self, parser, namespace, values, option_string = None):
@@ -143,8 +143,7 @@ parser.add_argument('--test', action = 'store_true', dest = 'test', help = 'trig
 
 group = parser.add_argument_group('required arguments')
 # Both of these set 'key'; only one of them is required
-group.add_argument('--key', action = KeyAction, nargs = 2, metavar = ('KEY', 'AUTH'), help = 'key (see the README for more information)')
-group.add_argument('--url', action = PasskeyUrlAction, dest = 'key', help = 'passkey URL containing your key')
+group.add_argument('--url', action = PasskeyUrlAction, help = 'passkey URL containing your token')
 
 group = parser.add_argument_group('alerts')
 group.add_argument('--popup', dest = 'alerts', action = 'append_const', const = ('popup',), help = 'show a dialog box')
@@ -154,7 +153,7 @@ group.add_argument('--email', dest = 'alerts', action = EmailAction, nargs = 3, 
 
 args = parser.parse_args()
 
-if args.key is None and not args.test:
+if args.url is None and not args.test:
 	parser.print_usage()
 	exit(1)
 
@@ -245,7 +244,8 @@ if args.test:
 	exit(0)
 
 lastAlerts = set()
-opener = build_opener(HTTPCookieProcessor())
+cookieJar = CookieJar()
+opener = build_opener(HTTPCookieProcessor(cookieJar))
 
 def send(name, *args):
 	try:
@@ -256,10 +256,15 @@ def send(name, *args):
 	except URLError as e:
 		raise RuntimeError("%s failed: %s" % (name, e))
 
-def searchNew():
+def search():
 	'''Search using a reservation key (for users who don't have a booking yet)'''
-	resp = send('Session request', "https://book.passkey.com/reg/%s/%s" % tuple(args.key))
+	resp = send('Session request', args.url)
+	# For some reason getting a cookie out of the CookieJar is overly complicated, so this uses the internal _cookies field
+	xsrfToken = cookieJar._cookies['book.passkey.com']['/']['XSRF-TOKEN'].value
+
 	data = {
+		'_csrf': xsrfToken,
+		'hotelId': '0',
 		'blockMap.blocks[0].blockId': '0',
 		'blockMap.blocks[0].checkIn': args.checkin,
 		'blockMap.blocks[0].checkOut': args.checkout,
@@ -268,23 +273,6 @@ def searchNew():
 		'blockMap.blocks[0].numberOfChildren': str(args.children),
 	}
 	return send('Search', baseUrl + '/rooms/select', urlencode(data).encode('utf8'))
-
-def searchExisting():
-	'''Search using an acknowledgement number (for users who have booked a room)'''
-	data = {
-		'blockMap': {
-			'blocks': [{
-				'blockId': '0',
-				'checkIn': args.checkin,
-				'checkOut': args.checkout,
-				'numberOfGuests': str(args.guests),
-				'numberOfRooms': str(args.rooms),
-				'numberOfChildren': str(args.children),
-			}]
-		},
-	}
-	send('Loading existing reservation', baseUrl + "/r/%s/%s" % tuple(args.key))
-	send('Search', Request(baseUrl + '/rooms/select/search', toJS(data).encode('utf8'), headers = {'Content-Type': 'application/json'}))
 
 def parseResults():
 	resp = send('List', baseUrl + '/list/hotels')
@@ -347,7 +335,6 @@ def parseResults():
 	lastAlerts = alertHash
 	return True
 
-search = searchNew if '-' in args.key[0] else searchExisting
 while True:
 	print("Searching... (%d %s, %d %s, %s - %s, %s)" % (args.guests, 'guest' if args.guests == 1 else 'guests', args.rooms, 'room' if args.rooms == 1 else 'rooms', args.checkin, args.checkout, 'connected' if args.max_distance == 'connected' else 'downtown' if args.max_distance is None else "within %.1f blocks" % args.max_distance))
 	try:

@@ -2,7 +2,7 @@
 
 This script polls the Gencon housing website looking for hotel rooms near the ICC, and alerts you in a variety of ways when available rooms are found. It requires a relatively modern version of [Python](https://www.python.org/) 2 (2.7.9+) or 3.
 
-This was most recently updated for Gencon 2020. If it's currently a later year, I'll probably be putting out an update soon after housing opens. If that doesn't happen, you can probably figure out [what to edit](https://github.com/mrozekma/gencon-hotel-check/blob/master/gencon-hotel-check.py#L26-L27) to get it working assuming nothing major has changed on the housing website.
+This was most recently updated for Gencon 2022. If it's currently a later year, I'll probably be putting out an update soon after housing opens. If that doesn't happen, you can probably figure out [what to edit](https://github.com/mrozekma/gencon-hotel-check/blob/master/gencon-hotel-check.py#L30-L31) to get it working assuming nothing major has changed on the housing website.
 
 ## Output
 
@@ -27,12 +27,13 @@ If you don't have git, you can open the [raw file](https://raw.githubusercontent
 
 Before you can use the script, you need to get a URL from the housing website.
 
-* **If you don't have a room**: Go to https://www.gencon.com/housing. Click the "Go to Housing Portal" button. You should end up on a URL of the form: `https://book.passkey.com/reg/XXXXXXXX-XXXX/YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY`.
-* **If you already have a room**: Go to https://www.gencon.com/housing. Click the "Manage Room" button. Answer the challenge question (either your e-mail address, first name, or last name). You should end up on a URL of the form: `https://book.passkey.com/event/ID/owner/ID/r/XXXXXXXX/YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY`.
+* Go to https://www.gencon.com/housing.
+* Click "Go to Housing Portal" or "Manage Room", depending on if you already have a room.
+* You should end up on a page with a URL like https://book.passkey.com/entry?token=...
 
 `gencon-hotel-check.py --help` outputs the complete list of arguments, but these are the most important:
 
-* `--url` is the only mandatory argument. Pass the URL you ended up on above (`--url "https://book.passkey.com/..."`). The URL might contain special characters (e.g. `&`), so be sure to put quotes around it.
+* `--url` is the only mandatory argument. Pass the URL you ended up on above (`--url "https://book.passkey.com/entry?token=..."`). The URL might contain special characters (e.g. `&`), so be sure to put quotes around it.
 * `--checkin` and `--checkout` specify the date range you need. The default is the days of the convention, Thursday through Sunday. Since Wednesday through Sunday is also very common, you can use `--wednesday` as a shorthand.
 
 **NOTE**: I recommend that after setting things up the first time, including the miscellaneous alerts, you try one run including the `--test` flag. This will trigger all the alerts you've requested with some test data, to make sure they're working correctly. I make no guarantees that they'll work when a real hotel room is found, but checking that they're right ahead of time can't hurt. Speaking of which:
