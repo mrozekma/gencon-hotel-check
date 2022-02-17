@@ -80,6 +80,12 @@ Open the housing site in the system's default browser. There's no simple way to 
 
 Send an e-mail that lists the found hotels and includes a link to the housing site. Most SMTP servers are authenticated, so you need to give a from address that has permission to send via specified SMTP server, and give the corresponding password when running the script. If you have an unauthenticated SMTP server available, you can use that instead and leave the password blank when the script asks. The script has been tested with Gmail, so I can confirm that if nothing else, it works there (host is `smtp.gmail.com`).
 
+### Send Pushbullet
+
+`gencon-hotel-check.py --pushbullet ACCESS_TOKEN`
+
+Send an alert to all of your devices via [Pushbullet](https://www.pushbullet.com/). This requires a free Pushbullet account, and an API access token that can be generated [here](https://www.pushbullet.com/#settings).
+
 ### SMS
 
 SMS messaging is not directly supported, as it generally requires access to a paid API. However, most carriers provide a [gateway](https://en.wikipedia.org/wiki/SMS_gateway#Email_clients) that can be used to send SMS messages via e-mail. This is the main reason the e-mail alert option provides a distinct "to" address -- it's expected that you'll be sending the e-mail to yourself (i.e. to the "from" address), but you can also send it to your phone via an SMS gateway.

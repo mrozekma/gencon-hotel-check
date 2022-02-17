@@ -26,7 +26,6 @@ else:
 	from urllib.parse import urlencode, urlparse
 	from urllib.request import HTTPCookieProcessor, Request, urlopen, build_opener
 
-
 firstDay, lastDay, startDay = datetime(2022, 7, 30), datetime(2022, 8, 9), datetime(2022, 8, 4)
 eventId = 50268617
 ownerId = 10909638
@@ -150,6 +149,7 @@ group.add_argument('--popup', dest = 'alerts', action = 'append_const', const = 
 group.add_argument('--cmd', dest = 'alerts', action = 'append', type = lambda arg: ('cmd', arg), metavar = 'CMD', help = 'run the specified command, passing each hotel name as an argument')
 group.add_argument('--browser', dest = 'alerts', action = 'append_const', const = ('browser',), help = 'open the Passkey website in the default browser')
 group.add_argument('--email', dest = 'alerts', action = EmailAction, nargs = 3, metavar = ('HOST', 'FROM', 'TO'), help = 'send an e-mail')
+group.add_argument('--pushbullet', dest = 'alerts', action = 'append', type = lambda arg: ('pushbullet', arg), metavar = 'ACCESS_TOKEN', help = 'send a Pushbullet notification')
 
 args = parser.parse_args()
 
@@ -227,6 +227,25 @@ for alert in args.alerts or []:
 				return False
 		if not closure(host, fromEmail, toEmail):
 			success = False
+	elif alert[0] == 'pushbullet':
+		_, accessToken = alert
+		def handle(preamble, hotels):
+			data = {
+				'type': 'link',
+				'title': 'Gencon Hotel Search',
+				'body': '\n'.join("%s: %s" % (hotel['name'], hotel['room']) for hotel in hotels),
+				'url': baseUrl + '/home',
+			}
+			headers = {
+				'Content-Type': 'application/json',
+				'Access-Token': accessToken,
+			}
+			resp = urlopen(Request('https://api.pushbullet.com/v2/pushes', toJS(data).encode('utf-8'), headers))
+			if resp.getcode() != 200:
+				print("Response %d trying to send Pushbullet alert" % resp.getcode())
+				return False
+			return True
+		alertFns.append(handle)
 
 if not success:
 	exit(1)
