@@ -26,8 +26,8 @@ else:
 	from urllib.parse import urlencode, urlparse
 	from urllib.request import HTTPCookieProcessor, Request, urlopen, build_opener
 
-firstDay, lastDay, startDay = datetime(2024, 7, 27), datetime(2024, 8, 6), datetime(2024, 8, 1)
-eventId = 50729171
+firstDay, lastDay, startDay = datetime(2025, 7, 26), datetime(2025, 8, 6), datetime(2025, 7, 31)
+eventId = 50910675
 ownerId = 10909638
 
 distanceUnits = {
@@ -125,8 +125,7 @@ parser.add_argument('--guests', type = int, default = 1, help = 'number of guest
 parser.add_argument('--children', type = int, default = 0, help = 'number of children')
 parser.add_argument('--rooms', type = int, default = 1, help = 'number of rooms')
 group = parser.add_mutually_exclusive_group()
-group.add_argument('--checkin', type = type_day, metavar = 'YYYY-MM-DD', default = startDay.strftime('%Y-%m-%d'), help = 'check in')
-group.add_argument('--wednesday', dest = 'checkin', action = 'store_const', const = (startDay - timedelta(1)).strftime('%Y-%m-%d'), help = 'check in on Wednesday')
+group.add_argument('--checkin', type = type_day, metavar = 'YYYY-MM-DD', default = (startDay - timedelta(1)).strftime('%Y-%m-%d'), help = 'check in')
 parser.add_argument('--checkout', type = type_day, metavar = 'YYYY-MM-DD', default = (startDay + timedelta(3)).strftime('%Y-%m-%d'), help = 'check out')
 group = parser.add_mutually_exclusive_group()
 group.add_argument('--max-distance', type = type_distance, metavar = 'BLOCKS', help = "max hotel distance that triggers an alert (or 'connected' to require skywalk hotels)")
