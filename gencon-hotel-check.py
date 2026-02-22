@@ -26,8 +26,8 @@ else:
 	from urllib.parse import urlencode, urlparse
 	from urllib.request import HTTPCookieProcessor, Request, urlopen, build_opener
 
-firstDay, lastDay, startDay = datetime(2025, 7, 26), datetime(2025, 8, 6), datetime(2025, 7, 31)
-eventId = 50910675
+firstDay, lastDay, startDay = datetime(2026, 7, 25), datetime(2026, 8, 4), datetime(2026, 7, 30)
+eventId = 51118112
 ownerId = 10909638
 
 distanceUnits = {
